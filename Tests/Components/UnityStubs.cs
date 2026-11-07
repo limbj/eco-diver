@@ -24,6 +24,7 @@ namespace UnityEngine
         internal bool PendingDestroy;
         internal bool Persistent;
         public HideFlags hideFlags { get; set; }
+        public string name { get; set; } = "Test object";
 
         public Object() { Objects.Add(this); }
 
@@ -95,6 +96,13 @@ namespace UnityEngine
 
         public void SetActive(bool active) { activeSelf = active; }
 
+        public static GameObject CreatePrimitive(PrimitiveType type)
+        {
+            var gameObject = new GameObject();
+            gameObject.AddComponent<Renderer>();
+            return gameObject;
+        }
+
         internal void DestroyComponents()
         {
             foreach (Component component in components.ToArray()) StubRuntime.DestroyNow(component);
@@ -106,6 +114,7 @@ namespace UnityEngine
         internal GameObject Owner;
         public GameObject gameObject { get { return Owner; } }
         public Transform transform { get { return Owner.transform; } }
+        public Camera camera { get { return GetComponent<Camera>(); } }
         public T GetComponent<T>() where T : Component { return Owner.GetComponent<T>(); }
         public bool TryGetComponent<T>(out T component) where T : Component
         {
@@ -131,7 +140,17 @@ namespace UnityEngine
     public sealed class Coroutine { }
     public enum HideFlags { HideAndDontSave }
     public sealed class WaitForSeconds { public WaitForSeconds(float seconds) { } }
-    public class Transform : Component { }
+    public class Transform : Component
+    {
+        public Vector3 position { get; set; }
+        public Vector3 localScale { get; set; } = new Vector3(1f, 1f, 1f);
+        public Transform parent { get; set; }
+        public void DetachChildren()
+        {
+            foreach (Transform child in Objects.OfType<Transform>().Where(child => child.parent == this).ToArray())
+                child.parent = null;
+        }
+    }
     public class Collider : Component { }
     public sealed class BoxCollider : Collider { public bool isTrigger; }
     public sealed class AudioClip : Object { }
@@ -160,6 +179,7 @@ namespace UnityEngine
     {
         public static int Min(int first, int second) { return Math.Min(first, second); }
         public static float Abs(float value) { return Math.Abs(value); }
+        public static bool Approximately(float first, float second) { return Math.Abs(first - second) <= 0.000001f; }
     }
     public static class Random
     {
@@ -200,6 +220,7 @@ namespace UnityEngine
             Object.Objects.Clear();
             DontDestroyCalls = 0;
             Time.deltaTime = 0f;
+            CullingGroup.LastCreated = null;
         }
     }
 }

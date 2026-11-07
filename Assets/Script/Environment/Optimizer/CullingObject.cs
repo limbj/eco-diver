@@ -5,27 +5,24 @@ namespace Script.Environment.Optimizer
     public class CullingObject
     {
         public readonly Renderer Renderer;
-        public readonly Vector3 Position;
-        private readonly MeshFilter _meshFilter;
+        public Vector3 Position => Renderer.bounds.center;
         private readonly float _maxRadius;
 
         public CullingObject(Renderer renderer, MeshFilter meshFilter, Transform transform, float maxRadius)
         {
             Renderer = renderer;
-            Position = transform.position;
-            _meshFilter = meshFilter;
             _maxRadius = maxRadius;
         }
         
         public float GetRadius()
         {
-            var bounds = _meshFilter.mesh.bounds;
+            // CullingGroup spheres must enclose the renderer in world space.
+            var bounds = Renderer.bounds;
             var radius = bounds.extents.magnitude;
 
             if (radius > _maxRadius)
             {
-                radius = _maxRadius;
-                Debug.LogWarning($"Mesh {Renderer.gameObject.name} is too big!");
+                Debug.LogWarning($"Mesh {Renderer.gameObject.name} exceeds the world-space bounding radius warning threshold.");
             }
 
             return radius;

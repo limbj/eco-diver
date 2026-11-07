@@ -40,7 +40,10 @@ try {
         'Assets/Script/Display/WaterDepthManager.cs',
         'Assets/Script/Display/OxygenManager.cs',
         'Assets/Script/Display/OxygenSupply.cs',
-        'Assets/Script/Equipment/ToolSelector.cs'
+        'Assets/Script/Equipment/ToolSelector.cs',
+        'Assets/Script/Environment/Optimizer/CullingObject.cs',
+        'Assets/Script/Environment/Optimizer/CullingOptimizer.cs',
+        'Assets/Script/Environment/Optimizer/MarkerObject.cs'
     ) | ForEach-Object { Join-Path $projectRoot $_ }
     $componentTests = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Components') -File -Filter '*.cs' |
         ForEach-Object { $_.FullName })

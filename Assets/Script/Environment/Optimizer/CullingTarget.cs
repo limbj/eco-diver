@@ -6,6 +6,7 @@ namespace Script.Environment.Optimizer
     public class CullingTarget : MonoBehaviour
     {
         [SerializeField]
+        [Tooltip("Warn above this world-space bounding radius without shrinking the culling sphere.")]
         private float maxBoundingRadius = 100f;
         
         public void GetCullingObjects(List<CullingObject> list)
