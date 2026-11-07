@@ -10,6 +10,11 @@ namespace Script.Quest
 
         protected abstract bool CanComplete();
 
+        // Register event listeners before later quests are deactivated by the observer.
+        public virtual void Prepare()
+        {
+        }
+
         protected virtual void OnComplete()
         {
             Debug.Log($"{GetQuestName()} Completed");

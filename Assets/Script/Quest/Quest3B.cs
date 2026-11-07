@@ -8,6 +8,7 @@ namespace Script.Quest
         public Robot robot;
         private Robot _robot;
         private ChainedRobot _chainedRobot;
+        private bool _isPrepared;
         private bool _inside;
         private bool _canComplete;
 
@@ -30,19 +31,29 @@ namespace Script.Quest
         {
             base.Start();
             SetupBoxCollider();
+            Prepare();
+        }
+
+        public override void Prepare()
+        {
+            if (_isPrepared) return;
+            _isPrepared = true;
             SetupRobot(robot);
         }
 
         private void SetupRobot(Robot instance)
         {
+            if (_robot != null) _robot.OnChainTied -= OnRobotTied;
             _robot = instance;
-            _robot.OnChainTied += OnRobotTied;
+            if (_robot != null) _robot.OnChainTied += OnRobotTied;
         }
 
         private void OnRobotTied(ChainedRobot chainedRobot)
         {
+            SetupRobot(null);
+            if (_chainedRobot != null) _chainedRobot.OnChainUntied -= OnRobotUntied;
             _chainedRobot = chainedRobot;
-            _chainedRobot.OnChainUntied += OnRobotUntied;
+            if (_chainedRobot != null) _chainedRobot.OnChainUntied += OnRobotUntied;
         }
 
         private void OnRobotUntied(Robot instance)
@@ -71,6 +82,13 @@ namespace Script.Quest
             {
                 _inside = false;
             }
+        }
+
+        private void OnDestroy()
+        {
+            SetupRobot(null);
+            if (_chainedRobot != null) _chainedRobot.OnChainUntied -= OnRobotUntied;
+            _chainedRobot = null;
         }
     }
 }

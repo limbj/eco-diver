@@ -52,6 +52,7 @@ namespace Script.Quest
 
         private void RegisterQuest(Quest quest)
         {
+            quest.Prepare();
             quest.Deactivate();
             _quests.Enqueue(quest);
         }

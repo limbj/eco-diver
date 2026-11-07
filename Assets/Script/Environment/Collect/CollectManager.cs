@@ -20,12 +20,17 @@ namespace Script.Environment.Collect
             if (Instance != null && Instance != this)
             {
                 Destroy(this.gameObject); // Ensures that there isn't more than one instance
+                return;
             }
             else
             {
                 Instance = this;
-                DontDestroyOnLoad(gameObject); // Makes the manager persist across scenes
             }
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
         }
 
         private void Start()

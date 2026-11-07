@@ -30,6 +30,24 @@ try {
     & $testsExecutable
     if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
 
+    $componentSources = @(
+        'Assets/Script/Quest/Quest.cs',
+        'Assets/Script/Quest/QuestObserver.cs',
+        'Assets/Script/Quest/Quest3A.cs',
+        'Assets/Script/Quest/Quest3B.cs',
+        'Assets/Script/Quest/QuestLevel.cs',
+        'Assets/Script/Environment/Collect/CollectManager.cs'
+    ) | ForEach-Object { Join-Path $projectRoot $_ }
+    $componentTests = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Components') -File -Filter '*.cs' |
+        ForEach-Object { $_.FullName })
+    $componentExecutable = Join-Path $temporaryRoot 'ComponentTests.exe'
+    # Serialized Unity fields are populated by the scene, outside this standalone compiler.
+    & $CompilerPath -nologo -warnaserror+ -nowarn:0649 -langversion:9.0 -target:exe "-out:$componentExecutable" `
+        @componentSources @componentTests (Join-Path $PSScriptRoot 'Standalone/Program.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Component test compilation failed.' }
+    & $componentExecutable
+    if ($LASTEXITCODE -ne 0) { throw 'Component tests failed.' }
+
     $roslynNames = @('Microsoft.CodeAnalysis.dll','Microsoft.CodeAnalysis.CSharp.dll',
         'System.Collections.Immutable.dll','System.Reflection.Metadata.dll','System.Memory.dll',
         'System.Runtime.CompilerServices.Unsafe.dll','System.Threading.Tasks.Extensions.dll',
