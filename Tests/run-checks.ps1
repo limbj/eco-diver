@@ -55,6 +55,20 @@ try {
     & $componentExecutable
     if ($LASTEXITCODE -ne 0) { throw 'Component tests failed.' }
 
+    $equipmentSources = @(
+        'Assets/Script/Equipment/Headlight.cs',
+        'Assets/Script/Equipment/Equipment.cs',
+        'Assets/Script/Equipment/Tool.cs'
+    ) | ForEach-Object { Join-Path $projectRoot $_ }
+    $equipmentTests = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'Equipment') -File -Filter '*.cs' |
+        ForEach-Object { $_.FullName })
+    $equipmentExecutable = Join-Path $temporaryRoot 'EquipmentTests.exe'
+    & $CompilerPath -nologo -warnaserror+ -nowarn:0649 -langversion:9.0 -target:exe "-out:$equipmentExecutable" `
+        @equipmentSources @equipmentTests (Join-Path $PSScriptRoot 'Standalone/Program.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Equipment test compilation failed.' }
+    & $equipmentExecutable
+    if ($LASTEXITCODE -ne 0) { throw 'Equipment tests failed.' }
+
     $roslynNames = @('Microsoft.CodeAnalysis.dll','Microsoft.CodeAnalysis.CSharp.dll',
         'System.Collections.Immutable.dll','System.Reflection.Metadata.dll','System.Memory.dll',
         'System.Runtime.CompilerServices.Unsafe.dll','System.Threading.Tasks.Extensions.dll',
