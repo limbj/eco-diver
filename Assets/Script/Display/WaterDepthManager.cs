@@ -9,9 +9,6 @@ namespace Script.Display
         private Transform playerTransform; // Assign the player's transform in the inspector
 
         private float _defaultDepthLevel; // This will be set to the player's starting Y position
-        private float _lastLoggedDepth = 0.0f; // To track when to log depth changes
-
-        private const float DepthLogInterval = 0.1f; // Log every 0.1m change
 
         void Start()
         {
@@ -42,13 +39,8 @@ namespace Script.Display
             // Check if depth is negative; if so, player is above water level
             if (currentDepth < 0) currentDepth = 0;
 
-            // Check if the depth change is significant enough to log
-            if (Mathf.Abs(_lastLoggedDepth - currentDepth) >= DepthLogInterval)
-            {
-                _lastLoggedDepth = currentDepth;
-
-                DisplayManager.Instance.WaterDepth = _lastLoggedDepth;
-            }
+            // Oxygen consumption needs the current depth, including crossing the surface.
+            DisplayManager.Instance.WaterDepth = currentDepth;
         }
     }
 }

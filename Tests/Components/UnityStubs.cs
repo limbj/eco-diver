@@ -4,8 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-// This harness supplies engine boundaries only. Quest and collection behavior comes
-// from the production sources compiled by run-checks.ps1. Lifecycle calls are explicit.
+// This harness supplies engine and collaborator boundaries only. Component behavior
+// comes from the production sources compiled by run-checks.ps1. Lifecycle calls are explicit.
 namespace UnityEngine
 {
     [AttributeUsage(AttributeTargets.Field)]
@@ -23,6 +23,7 @@ namespace UnityEngine
         internal bool Destroyed;
         internal bool PendingDestroy;
         internal bool Persistent;
+        public HideFlags hideFlags { get; set; }
 
         public Object() { Objects.Add(this); }
 
@@ -128,6 +129,7 @@ namespace UnityEngine
     }
 
     public sealed class Coroutine { }
+    public enum HideFlags { HideAndDontSave }
     public sealed class WaitForSeconds { public WaitForSeconds(float seconds) { } }
     public class Transform : Component { }
     public class Collider : Component { }
@@ -135,12 +137,30 @@ namespace UnityEngine
     public sealed class AudioClip : Object { }
     public sealed class AudioSource : Component { public void PlayOneShot(AudioClip clip) { } }
     public sealed class Camera : Component { public static Camera main { get { return null; } } }
+    public sealed class Canvas : MonoBehaviour { }
+    public static class Time { public static float deltaTime; }
+    public struct Vector2
+    {
+        public readonly float x, y;
+        public Vector2(float x, float y) { this.x = x; this.y = y; }
+        public static Vector2 up { get { return new Vector2(0f, 1f); } }
+        public float sqrMagnitude { get { return x * x + y * y; } }
+        public static float SignedAngle(Vector2 from, Vector2 to)
+        {
+            return (float)(Math.Atan2(from.x * to.y - from.y * to.x, from.x * to.x + from.y * to.y)
+                * 180d / Math.PI);
+        }
+    }
     public static class Debug
     {
         public static void Log(object message) { }
         public static void LogWarning(object message) { }
     }
-    public static class Mathf { public static int Min(int first, int second) { return Math.Min(first, second); } }
+    public static class Mathf
+    {
+        public static int Min(int first, int second) { return Math.Min(first, second); }
+        public static float Abs(float value) { return Math.Abs(value); }
+    }
     public static class Random
     {
         private static readonly System.Random Generator = new System.Random(11);
@@ -179,6 +199,7 @@ namespace UnityEngine
                 DestroyNow(value);
             Object.Objects.Clear();
             DontDestroyCalls = 0;
+            Time.deltaTime = 0f;
         }
     }
 }
@@ -226,6 +247,8 @@ namespace Script.Display
         public Script.Quest.QuestLevel QuestLevel { get; set; }
         public string QuestName { get; set; }
         public string QuestDescription { get; set; }
+        public float WaterDepth { get; set; }
+        public float OxygenRate { get; set; }
     }
 }
 
@@ -234,6 +257,7 @@ namespace Script.Scene
     public sealed class SceneLoader : UnityEngine.MonoBehaviour
     {
         public static SceneLoader Instance { get { return FindObjectOfType<SceneLoader>(); } }
+        public bool IsLoadingScene { get; set; }
         public void LoadNextScene() { }
     }
 }
@@ -241,4 +265,88 @@ namespace Script.Scene
 namespace Script.Environment.Collect
 {
     public sealed class CollectableItem : UnityEngine.MonoBehaviour { }
+}
+
+namespace Crest
+{
+    public sealed class OceanRenderer : UnityEngine.MonoBehaviour
+    {
+        public static OceanRenderer Instance { get { return FindObjectOfType<OceanRenderer>(); } }
+        public float ViewerHeightAboveWater { get; set; }
+    }
+}
+
+namespace Script.UI
+{
+    public sealed class DiveFailureController : UnityEngine.MonoBehaviour
+    {
+        public bool IsFailed { get; private set; }
+        public void Show() { IsFailed = true; }
+    }
+}
+
+namespace UnityEngine.InputSystem
+{
+    public sealed class InputActionReference
+    {
+        public readonly InputAction action = new InputAction();
+    }
+
+    public sealed class InputAction
+    {
+        public bool PressedThisFrame { get; set; }
+        public UnityEngine.Vector2 Axis { get; set; }
+        public bool WasPressedThisFrame() { return PressedThisFrame; }
+        public T ReadValue<T>() { return (T)(object)Axis; }
+    }
+}
+
+namespace UnityEngine.UI
+{
+    public sealed class Image : UnityEngine.MonoBehaviour { }
+}
+
+namespace UnityEngine.XR
+{
+    public struct InputDevice { }
+}
+
+namespace UnityEngine.XR.Interaction.Toolkit
+{
+    public enum RequestResult { Success, Busy }
+    public class LocomotionProvider : UnityEngine.MonoBehaviour { }
+
+    public sealed class LocomotionSystem : UnityEngine.MonoBehaviour
+    {
+        private LocomotionProvider owner;
+        public bool busy { get { return owner; } }
+        public int FinishCount { get; private set; }
+        public RequestResult RequestExclusiveOperation(LocomotionProvider requester)
+        {
+            if (owner) return RequestResult.Busy;
+            owner = requester;
+            return RequestResult.Success;
+        }
+        public void FinishExclusiveOperation(LocomotionProvider requester)
+        {
+            if (owner == requester)
+            {
+                owner = null;
+                FinishCount++;
+            }
+        }
+    }
+}
+
+namespace Script.Equipment
+{
+    public sealed class Tool : UnityEngine.Object { }
+
+    public sealed class Equipment : UnityEngine.MonoBehaviour
+    {
+        private Tool active;
+        public int EquipCount { get; private set; }
+        public Tool GetActiveTool() { return active; }
+        public void Equip(Tool tool) { active = tool; EquipCount++; }
+    }
 }

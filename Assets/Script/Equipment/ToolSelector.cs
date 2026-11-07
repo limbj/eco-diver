@@ -66,6 +66,7 @@ namespace Script.Equipment
 
         private void OpenMenu()
         {
+            ResetTimer();
             var tool = equipment.GetActiveTool();
                 
             for (var idx = 0; idx < 4; ++idx)
@@ -102,7 +103,6 @@ namespace Script.Equipment
             else if (IsTimeOver() || IsTogglePressed())
             {
                 CloseMenu();
-                ResetTimer();
                 EnableLocomotion();
             }
         }
@@ -124,6 +124,7 @@ namespace Script.Equipment
 
         private void CloseMenu()
         {
+            ResetTimer();
             _selected = null;
             _selectedIdx = 0;
             _isOpen = false;
