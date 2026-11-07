@@ -71,12 +71,12 @@ VR 컨트롤러를 활용한 수중 이동과 도구 조작을 통해, 바다를
 
 | 구분 | 사용 기술 |
 | :--- | :--- |
-| 게임 엔진 | Unity **2022.3.21f1** |
+| 게임 엔진 | Unity 2022.3.21f1 |
 | 프로그래밍 | C# · .NET Standard 2.1 |
-| VR 상호작용 | XR Interaction Toolkit **2.5.3** · OpenXR **1.10.0** |
-| 입력 | Unity Input System **1.7.0** |
+| VR 상호작용 | XR Interaction Toolkit 2.5.3 · OpenXR 1.10.0 |
+| 입력 | Unity Input System 1.7.0 |
 | 해양 환경 | Crest |
-| 3D 모델링 | Blender **4.1** |
+| 3D 모델링 | Blender 4.1 |
 | 개발 도구 | JetBrains Rider · Git · Git LFS |
 
 ## 프로젝트 구조
