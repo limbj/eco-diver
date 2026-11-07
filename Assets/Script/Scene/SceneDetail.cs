@@ -1,11 +1,11 @@
-using System.Collections.Generic;
-
 namespace Script.Scene
 {
     public struct SceneDetail
     {
         public readonly string Name;
         public readonly string Description;
+
+        public string AssetPath => "Assets/" + Name + ".unity";
 
         //Production Scenes
         public static readonly SceneDetail TitleScene =

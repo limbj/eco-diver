@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.UIElements;
-using UnityEngine.Rendering;
 
 namespace Script.UI
 {
@@ -10,50 +9,98 @@ namespace Script.UI
         private bool verbose = false;
 
         private UIDocument _uiDocument;
+        private VisualElement _root;
         private Slider _soundEffectSlider;
         private Slider _brightnessSlider;
         private Button _clearButton;
 
-        private const float initialSoundEffectValue = 100f;
-        private const float initialBrightnessValue = 100f;
-
-        void Start()
+        private void OnEnable()
         {
-            _uiDocument = GetComponent<UIDocument>();
+            BindControls();
+        }
 
-            // Reference the sliders from the UI
-            _soundEffectSlider = _uiDocument.rootVisualElement.Q<Slider>("SoundEffectSlider");
+        private void Start()
+        {
+            // UIDocument can create its visual tree after this component's OnEnable.
+            BindControls();
+        }
+
+        private void LateUpdate()
+        {
+            if (_uiDocument == null || _uiDocument.rootVisualElement != _root)
+            {
+                BindControls();
+            }
+        }
+
+        private void OnDisable()
+        {
+            UnbindControls();
+            if (SettingsManager.TryGetExisting(out var settings))
+            {
+                settings.SaveSettings();
+            }
+        }
+
+        private void BindControls()
+        {
+            UnbindControls();
+            _uiDocument = GetComponent<UIDocument>();
+            if (_uiDocument == null || _uiDocument.rootVisualElement == null)
+            {
+                return;
+            }
+
+            _root = _uiDocument.rootVisualElement;
+            _soundEffectSlider = _root.Q<Slider>("SoundEffectSlider");
             if (_soundEffectSlider == null)
             {
                 Debug.LogWarning("SoundEffectSlider is null!");
             }
             else
             {
-                _soundEffectSlider.value = initialSoundEffectValue;
                 _soundEffectSlider.RegisterValueChangedCallback(OnSoundEffectSliderChanged);
             }
 
-            _brightnessSlider = _uiDocument.rootVisualElement.Q<Slider>("BrightnessSlider");
+            _brightnessSlider = _root.Q<Slider>("BrightnessSlider");
             if (_brightnessSlider == null)
             {
                 Debug.LogWarning("BrightnessSlider is null!");
             }
             else
             {
-                _brightnessSlider.value = initialBrightnessValue;
                 _brightnessSlider.RegisterValueChangedCallback(OnBrightnessSliderChanged);
             }
 
-            _clearButton = _uiDocument.rootVisualElement.Q<Button>("ClearButton");
+            _clearButton = _root.Q<Button>("ClearButton");
             if (_clearButton == null)
             {
                 Debug.LogWarning("ClearButton is null!");
             }
             else
             {
-
                 _clearButton.RegisterCallback<ClickEvent>(OnClearButtonClicked);
             }
+
+            SyncControls();
+        }
+
+        private void UnbindControls()
+        {
+            _soundEffectSlider?.UnregisterValueChangedCallback(OnSoundEffectSliderChanged);
+            _brightnessSlider?.UnregisterValueChangedCallback(OnBrightnessSliderChanged);
+            _clearButton?.UnregisterCallback<ClickEvent>(OnClearButtonClicked);
+            _soundEffectSlider = null;
+            _brightnessSlider = null;
+            _clearButton = null;
+            _root = null;
+        }
+
+        private void SyncControls()
+        {
+            var settings = SettingsManager.Instance;
+            _soundEffectSlider?.SetValueWithoutNotify(settings.SoundVolume);
+            _brightnessSlider?.SetValueWithoutNotify(settings.Brightness);
         }
 
         private void OnSoundEffectSliderChanged(ChangeEvent<float> evt)
@@ -80,22 +127,11 @@ namespace Script.UI
         {
             if (verbose)
             {
-                Debug.Log("Clearing all settings...");
+                Debug.Log("Resetting sound and brightness settings...");
             }
-            // Unregister callbacks
-            _soundEffectSlider.UnregisterValueChangedCallback(OnSoundEffectSliderChanged);
-            _brightnessSlider.UnregisterValueChangedCallback(OnBrightnessSliderChanged);
-
-            _soundEffectSlider.value = initialSoundEffectValue;
-            _brightnessSlider.value = initialBrightnessValue;
 
             SettingsManager.Instance.ClearSettings();
-
-            _soundEffectSlider.RegisterValueChangedCallback(OnSoundEffectSliderChanged);
-            _brightnessSlider.RegisterValueChangedCallback(OnBrightnessSliderChanged);
-
-            _soundEffectSlider.MarkDirtyRepaint();
-            _brightnessSlider.MarkDirtyRepaint();
+            SyncControls();
         }
     }
 }

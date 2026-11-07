@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.Rendering.PostProcessing;
+using UnityEngine.SceneManagement;
 using static Unity.XR.CoreUtils.XROrigin.TrackingOriginMode;
 
 namespace Script.UI
@@ -18,8 +20,15 @@ namespace Script.UI
                     SetupInstance();
                 }
 
+                _instance.EnsureInitialized();
                 return _instance;
             }
+        }
+
+        public static bool TryGetExisting(out SettingsManager settings)
+        {
+            settings = _instance;
+            return settings != null;
         }
 
         private static void SetupInstance()
@@ -33,13 +42,13 @@ namespace Script.UI
             }
         }
 
-        private const float InitialBrightnessValue = 100f;
-        private const float InitialSoundEffectValue = 100f;
         private const XROrigin.TrackingOriginMode InitialTrackingMode = Device;
 
-        private float _brightness = InitialBrightnessValue; // Default brightness value
-        private float _soundVolume = InitialSoundEffectValue; // Default sound volume value
         private XROrigin.TrackingOriginMode _trackingMode = InitialTrackingMode;
+        private readonly SettingsValues _values = new SettingsValues();
+        private readonly ISettingsStore _store = new PlayerPrefsSettingsStore();
+        private readonly List<ExposureState> _exposures = new List<ExposureState>();
+        private bool _initialized;
 
         [SerializeField] [Tooltip("Limit frame-rate")]
         private int maxFrameRate = 60;
@@ -47,8 +56,6 @@ namespace Script.UI
         private PostProcessProfile _postProcessProfile;
         [SerializeField] [Tooltip("Post Process Layer")]
         private PostProcessLayer _postProcessLayer;
-
-        private AutoExposure _autoExposure;
 
         public XROrigin.TrackingOriginMode TrackingMode
         {
@@ -62,22 +69,33 @@ namespace Script.UI
 
         public float Brightness
         {
-            get => _brightness;
+            get
+            {
+                EnsureInitialized();
+                return _values.Brightness;
+            }
             set
             {
-                _brightness = value;
-                AdjustBrightness(_brightness);
+                EnsureInitialized();
+                _values.SetBrightness(value);
+                _values.Stage(_store);
+                AdjustBrightness();
             }
         }
 
         public float SoundVolume
         {
-            get => _soundVolume;
+            get
+            {
+                EnsureInitialized();
+                return _values.SoundVolume;
+            }
             set
             {
-                _soundVolume = value;
-                // Update sound volume in your game
-                AdjustSoundEffect(_soundVolume);
+                EnsureInitialized();
+                _values.SetSoundVolume(value);
+                _values.Stage(_store);
+                AdjustSoundEffect();
             }
         }
 
@@ -85,86 +103,211 @@ namespace Script.UI
 
         public void ClearSettings()
         {
-            Brightness = InitialBrightnessValue;
-            SoundVolume = InitialSoundEffectValue;
-            TrackingMode = InitialTrackingMode;
+            EnsureInitialized();
+            _values.Reset(_store);
+            AdjustBrightness();
+            AdjustSoundEffect();
+            // XR floor calibration belongs to the current device/session, not user preferences.
         }
-        
+
+        public void SaveSettings()
+        {
+            EnsureInitialized();
+            _values.Save(_store);
+        }
+
         public void Reload()
         {
+            EnsureInitialized();
+            BindPostProcessing();
+            AdjustBrightness();
+            AdjustSoundEffect();
             UpdateXROrigin();
             UpdateFrameRate();
         }
 
-        void Awake()
+        private void Awake()
         {
-            if (_instance == null)
-            {
-                _instance = this;
-                DontDestroyOnLoad(this.gameObject);
-            }
-            else
+            if (_instance != null && _instance != this)
             {
                 Destroy(gameObject);
+                return;
+            }
+
+            _instance = this;
+            DontDestroyOnLoad(gameObject);
+            EnsureInitialized();
+        }
+
+        private void OnEnable()
+        {
+            if (_instance == this)
+            {
+                SceneManager.sceneLoaded += OnSceneLoaded;
             }
         }
 
-        void Start()
+        private void OnDisable()
         {
-            if(_postProcessProfile == null)
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+        }
+
+        private void Start()
+        {
+            if (_instance == this)
             {
-                Debug.LogError("Post Process Profile is null!");
+                Reload();
+            }
+        }
+
+        private void EnsureInitialized()
+        {
+            if (_initialized)
+            {
                 return;
             }
-            if(_postProcessLayer == null)
-            {
-                Debug.LogWarning("Post Process Layer is null! Please Set Main Camera.");
-            }
-            _postProcessProfile.TryGetSettings(out _autoExposure);
+
+            _values.Load(_store);
+            _initialized = true;
+            AdjustSoundEffect();
             UpdateFrameRate();
         }
 
-        private void AdjustSoundEffect(float volume)
+        private void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
         {
-            // To prevent the volume from temporarily changing to 0.
-            if (volume != 0f)
+            Reload();
+        }
+
+        private void BindPostProcessing()
+        {
+            RestoreProfiles();
+            if (!_postProcessLayer)
             {
-                AudioListener.volume = volume / 100f;
+                _postProcessLayer = FindObjectOfType<PostProcessLayer>();
             }
-            else
+
+            foreach (var volume in FindObjectsOfType<PostProcessVolume>())
             {
-                AudioListener.volume = 0.03f;
+                if (volume.enabled && volume.sharedProfile != null)
+                {
+                    // Work on a runtime instance instead of changing a shared project asset.
+                    AddExposure(volume.profile);
+                }
+            }
+
+            if (_exposures.Count == 0)
+            {
+                AddExposure(_postProcessProfile);
             }
         }
 
-        private void AdjustBrightness(float volume)
+        private void AddExposure(PostProcessProfile profile)
         {
-            // To prevent the volume from temporarily changing to 0.
-            if (volume != 0f)
+            if (profile == null || !profile.TryGetSettings(out AutoExposure exposure))
             {
-                _autoExposure.keyValue.value = volume / 100f;
+                return;
             }
-            else
+
+            foreach (var state in _exposures)
             {
-                _autoExposure.keyValue.value = 0.03f;
+                if (state.Exposure == exposure)
+                {
+                    return;
+                }
             }
+
+            _exposures.Add(new ExposureState(exposure, exposure.keyValue.value));
+        }
+
+        private void AdjustSoundEffect()
+        {
+            AudioListener.volume = _values.AudioLevel;
+        }
+
+        private void AdjustBrightness()
+        {
+            foreach (var state in _exposures)
+            {
+                if (state.Exposure)
+                {
+                    state.Exposure.keyValue.value = _values.ExposureKeyValue;
+                }
+            }
+        }
+
+        private void RestoreProfiles()
+        {
+            foreach (var state in _exposures)
+            {
+                if (state.Exposure)
+                {
+                    state.Exposure.keyValue.value = state.OriginalValue;
+                }
+            }
+
+            _exposures.Clear();
         }
 
         private void UpdateXROrigin()
         {
             var xrOrigin = FindObjectOfType<XROrigin>();
-            xrOrigin.RequestedTrackingOriginMode = _trackingMode;
+            if (xrOrigin != null)
+            {
+                xrOrigin.RequestedTrackingOriginMode = _trackingMode;
+            }
         }
 
         private void UpdateFrameRate()
         {
-            Application.targetFrameRate = maxFrameRate;
-            Time.fixedDeltaTime = 1f / maxFrameRate;
+            int frameRate = maxFrameRate > 0 ? maxFrameRate : 60;
+            Application.targetFrameRate = frameRate;
+            Time.fixedDeltaTime = 1f / frameRate;
         }
-    
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused && _instance == this)
+            {
+                SaveSettings();
+            }
+        }
+
         private void OnApplicationQuit()
         {
-            _autoExposure.keyValue.value = 1f;
+            if (_instance == this)
+            {
+                SaveSettings();
+                RestoreProfiles();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_instance == this)
+            {
+                RestoreProfiles();
+                _instance = null;
+            }
+        }
+
+        private sealed class ExposureState
+        {
+            public readonly AutoExposure Exposure;
+            public readonly float OriginalValue;
+
+            public ExposureState(AutoExposure exposure, float originalValue)
+            {
+                Exposure = exposure;
+                OriginalValue = originalValue;
+            }
+        }
+
+        private sealed class PlayerPrefsSettingsStore : ISettingsStore
+        {
+            public float GetFloat(string key, float defaultValue) => PlayerPrefs.GetFloat(key, defaultValue);
+            public void SetFloat(string key, float value) => PlayerPrefs.SetFloat(key, value);
+            public void DeleteKey(string key) => PlayerPrefs.DeleteKey(key);
+            public void Save() => PlayerPrefs.Save();
         }
     }
 }

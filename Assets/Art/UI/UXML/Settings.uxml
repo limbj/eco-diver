@@ -15,7 +15,9 @@
                 <ui:VisualElement class="menu item-bg" style="flex-grow: 1;">
                     <ui:Slider label="Sound Effect" high-value="200" name="SoundEffectSlider" low-value="0" show-input-field="false" value="100" style="width: initial;" />
                 </ui:VisualElement>
-                <ui:VisualElement class="menu item-bg" style="height: 50px;" />
+                <ui:VisualElement class="menu item-bg" style="height: 50px;">
+                    <ui:Button name="ClearButton" text="Reset settings" style="flex-grow: 1;" />
+                </ui:VisualElement>
                 <ui:VisualElement class="menu item-bg" style="height: 50px;" />
             </ui:VisualElement>
         </ui:VisualElement>

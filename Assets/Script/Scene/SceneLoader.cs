@@ -1,38 +1,34 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using Scene;
 using Script.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
+using UnityEngine.Video;
 
 namespace Script.Scene
 {
     public class SceneLoader : MonoBehaviour
     {
-        [SerializeField] [Tooltip("temporary button for loading scene")]
+        [SerializeField] [Tooltip("Temporary button for loading the next scene")]
         private InputActionReference loadButton;
 
-        // [SerializeField] [Tooltip("Fade Screen")]
-        // private FadeScreen fadeScreen;
-
-        [SerializeField] [Tooltip("Return to Title Scene")]
+        [SerializeField] [Tooltip("Loop the test scenario back to its first scene")]
         private bool returnToTitle = true;
 
-        [SerializeField] [Tooltip("Verbose Mode")]
-        private bool verbose;
+        [SerializeField] private bool verbose;
+        [SerializeField] [Min(0)] private float secondsToWaitLoad = 1f;
 
-        [SerializeField] [Tooltip("Verbose Mod")]
-        private float secondsToWaitLoad = 1f;
-
-        private List<SceneDetail> _selectedScenario;
-        
-        private bool _isLoadingScene;
-
+        private readonly SceneTransitionState _transitionState = new SceneTransitionState();
         private FadeScreen _fadeScreen;
-        
+        private Coroutine _transitionCoroutine;
+        private Coroutine _holdButtonCoroutine;
+        private Coroutine _endingFallbackCoroutine;
+        private AsyncOperation _asyncLoad;
         private static SceneLoader _instance;
+
+        public bool IsLoadingScene => _transitionState.IsLoading;
 
         public static SceneLoader Instance
         {
@@ -40,226 +36,210 @@ namespace Script.Scene
             {
                 if (!_instance)
                 {
-                    SetupInstance();
+                    _instance = FindObjectOfType<SceneLoader>();
+                    if (!_instance)
+                        _instance = new GameObject("SceneLoader").AddComponent<SceneLoader>();
                 }
-
                 return _instance;
             }
         }
 
-        private static void SetupInstance()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureSceneLoader()
         {
-            _instance = FindObjectOfType<SceneLoader>();
-            
-            if (!_instance)
-            {
-                GameObject gameObj = new GameObject();
-                gameObj.name = "SceneLoader";
-                _instance = gameObj.AddComponent<SceneLoader>();
-                DontDestroyOnLoad(gameObj);
-            }
+            // Directly opening a mission or ending in the editor must work as well.
+            _ = Instance;
+            SettingsManager.Instance.Reload();
         }
 
-        private readonly List<SceneDetail> ProductionScenes = new List<SceneDetail>
+        private void Awake()
         {
-            //Example
-            SceneDetail.TitleScene, SceneDetail.PrologueScene, SceneDetail.Quest1Scene,
-            SceneDetail.Quest2Scene, SceneDetail.Quest3Scene //, SceneDetail.TitleScene
-        };
-
-        private readonly List<SceneDetail> TestScenes = new List<SceneDetail>
-        {
-            SceneDetail.TestStartScene, SceneDetail.TestMainScene, SceneDetail.TestEndScene
-        };
-        private Coroutine _holdButtonCoroutine;
-
-
-        private static int FindSceneIndex(List<SceneDetail> sceneDetails,
-            UnityEngine.SceneManagement.Scene currentScene)
-        {
-            return sceneDetails.FindIndex(scene => currentScene.path.Contains(scene.Name));
-        }
-
-        private static bool DoExistInScenario(List<SceneDetail> sceneDetails,
-            UnityEngine.SceneManagement.Scene currentScene)
-        {
-            return FindSceneIndex(sceneDetails, currentScene) != -1;
-        }
-
-        void Awake()
-        {
-            LoadInstance();
-            LoadScene();
-        }
-
-        private FadeScreen GetFadeScreen()
-        {
-            if (!_fadeScreen)
+            if (_instance && _instance != this)
             {
-                _fadeScreen = FindObjectOfType<FadeScreen>(true);
-            }
-
-            return _fadeScreen;
-        }
-
-        private void LoadInstance()
-        {
-            if (verbose)
-            {
-                Debug.Log("Awake Singleton");
-            }
-
-            if (_instance == null)
-            {
-                if (verbose)
-                {
-                    Debug.Log("Instance is null");
-                }
-
-                _instance = this;
-                DontDestroyOnLoad(this.gameObject);
-            }
-            else
-            {
-                if (verbose)
-                {
-                    Debug.Log("Instance is not null");
-                }
-
                 Destroy(gameObject);
+                return;
             }
+
+            _instance = this;
+            DontDestroyOnLoad(gameObject);
+            SceneManager.sceneLoaded += OnSceneLoaded;
+            ConfigureCurrentScene(SceneManager.GetActiveScene());
         }
 
-        private void LoadScene()
+        private void OnDestroy()
         {
-            if (DoExistInScenario(TestScenes, SceneManager.GetActiveScene()))
-            {
-                _selectedScenario = TestScenes;
-                if (verbose)
-                {
-                    Debug.Log("Selected Scene is Test Scene");
-                }
-            }
-            else if (DoExistInScenario(ProductionScenes, SceneManager.GetActiveScene()))
-            {
-                _selectedScenario = ProductionScenes;
-                if (verbose)
-                {
-                    Debug.Log("Selected Scene is Production Scene");
-                }
-            }
-            else
-            {
-                if (verbose)
-                {
-                    Debug.LogWarning("Selected Scene doesn't exist in scenario");
-                }
+            if (_instance != this) return;
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            _instance = null;
+        }
 
-                enabled = false;
-            }
-
-            GetFadeScreen().gameObject.SetActive(true);
+        private static string CurrentScenePath()
+        {
+            var currentScene = SceneManager.GetActiveScene();
+            return string.IsNullOrEmpty(currentScene.path) ? currentScene.name : currentScene.path;
         }
 
         public void LoadNextScene()
         {
-            int currentSceneIndex = FindSceneIndex(_selectedScenario, SceneManager.GetActiveScene());
-            if (currentSceneIndex == -1)
+            if (_transitionState.IsNextSceneBlocked || IsLoadingScene) return;
+            if (!SceneFlow.TryGetNextScene(CurrentScenePath(), returnToTitle, out string nextScene))
             {
-                Debug.LogError("Current scene is not exist in scenario");
+                Debug.LogWarning("No next scene configured for " + CurrentScenePath());
                 return;
             }
-
-            if (_selectedScenario.Count <= currentSceneIndex + 1)
-            {
-                if (!returnToTitle)
-                {
-                    Debug.LogError("Next scene is not exist.");
-                    return;
-                }
-
-                LoadNewScene(_selectedScenario[0].Name);
-                return;
-            }
-
-            LoadNewScene(_selectedScenario[currentSceneIndex + 1].Name);
+            BeginTransition(nextScene, secondsToWaitLoad, false);
         }
 
-        private void LoadNewScene(string sceneName)
+        public void RestartCurrentScene()
         {
-            if (_isLoadingScene)
+            BeginTransition(CurrentScenePath(), 0f, true);
+        }
+
+        public void ReturnToTitle()
+        {
+            BeginTransition(SceneDetail.TitleScene.AssetPath, 0f, true);
+        }
+
+        public void CancelPendingTransition()
+        {
+            if (_holdButtonCoroutine != null)
             {
-                Debug.Log("Loading Scene Failed By Loading : " + sceneName);
-                return;
+                StopCoroutine(_holdButtonCoroutine);
+                _holdButtonCoroutine = null;
             }
 
-            Debug.Log("Loading Scene: " + sceneName);
-            StartCoroutine(LoadSceneWithDelay(sceneName));
+            bool hadPendingTransition = IsLoadingScene;
+            if (!_transitionState.CancelPending()) return;
+            if (_transitionCoroutine != null)
+            {
+                StopCoroutine(_transitionCoroutine);
+                _transitionCoroutine = null;
+            }
+            if (hadPendingTransition && _fadeScreen) _fadeScreen.FadeIn();
+        }
+
+        private void BeginTransition(string scenePath, float delay, bool allowBlockedTransition)
+        {
+            if (IsLoadingScene) return;
+            if (!Application.CanStreamedLevelBeLoaded(scenePath))
+            {
+                Debug.LogError("Scene is not available in Build Settings: " + scenePath);
+                return;
+            }
+            if (!_transitionState.TryBegin(allowBlockedTransition)) return;
+
+            if (verbose) Debug.Log("Loading scene: " + scenePath);
+            _transitionCoroutine = StartCoroutine(TransitionScene(scenePath, delay));
+        }
+
+        private IEnumerator TransitionScene(string scenePath, float delay)
+        {
+            if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+
+            var fadeScreen = GetFadeScreen();
+            if (fadeScreen)
+            {
+                fadeScreen.gameObject.SetActive(true);
+                fadeScreen.FadeOut();
+                if (fadeScreen.FadeDuration > 0f)
+                    yield return new WaitForSecondsRealtime(fadeScreen.FadeDuration);
+            }
+
+            Exception loadError = null;
+            try
+            {
+                _asyncLoad = SceneManager.LoadSceneAsync(scenePath, LoadSceneMode.Single);
+            }
+            catch (Exception exception)
+            {
+                loadError = exception;
+            }
+
+            if (_asyncLoad == null)
+            {
+                _transitionState.ReleaseFailedLoad();
+                _transitionCoroutine = null;
+                if (fadeScreen) fadeScreen.FadeIn();
+                Debug.LogError("Could not load scene " + scenePath + ": " + loadError?.Message);
+                yield break;
+            }
+
+            _transitionState.MarkLoadStarted();
+            // Keep the reservation until sceneLoaded, not just until activation is allowed.
+            yield return _asyncLoad;
+        }
+
+        private FadeScreen GetFadeScreen()
+        {
+            if (!_fadeScreen) _fadeScreen = FindObjectOfType<FadeScreen>(true);
+            return _fadeScreen;
+        }
+
+        private void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene, LoadSceneMode mode)
+        {
+            if (mode != LoadSceneMode.Single) return;
+            if (_transitionCoroutine != null) StopCoroutine(_transitionCoroutine);
+            if (_endingFallbackCoroutine != null) StopCoroutine(_endingFallbackCoroutine);
+            _transitionState.Complete();
+            _transitionCoroutine = null;
+            _endingFallbackCoroutine = null;
+            _asyncLoad = null;
+            if (_holdButtonCoroutine != null)
+            {
+                StopCoroutine(_holdButtonCoroutine);
+                _holdButtonCoroutine = null;
+            }
+            _fadeScreen = null;
+            ConfigureCurrentScene(scene);
+            SettingsManager.Instance.Reload();
+        }
+
+        private void ConfigureCurrentScene(UnityEngine.SceneManagement.Scene scene)
+        {
+            var fadeScreen = GetFadeScreen();
+            if (fadeScreen) fadeScreen.gameObject.SetActive(true);
+            if (!SceneFlow.IsEndingScene(scene.path)) return;
+
+            int playerCount = 0;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                foreach (var player in root.GetComponentsInChildren<VideoPlayer>(true))
+                {
+                    playerCount++;
+                    player.isLooping = false;
+                    if (!player.GetComponent<VideoEndDetector>())
+                        player.gameObject.AddComponent<VideoEndDetector>();
+                }
+            }
+            if (playerCount == 0)
+            {
+                Debug.LogWarning("Ending video player is missing; returning to the title.");
+                _endingFallbackCoroutine = StartCoroutine(ReturnFromMissingEndingVideo(scene.handle));
+            }
+        }
+
+        private IEnumerator ReturnFromMissingEndingVideo(int sourceSceneHandle)
+        {
+            yield return new WaitForSecondsRealtime(5f);
+            _endingFallbackCoroutine = null;
+            if (SceneManager.GetActiveScene().handle == sourceSceneHandle && !IsLoadingScene)
+                ReturnToTitle();
         }
 
         private void Update()
         {
-            if (loadButton && loadButton.action.WasPressedThisFrame())
-            {
-                OnLoadButtonPressed();
-            }
+            if (_transitionState.IsNextSceneBlocked || IsLoadingScene) return;
+            if (loadButton && loadButton.action != null && loadButton.action.WasPressedThisFrame()
+                && _holdButtonCoroutine == null)
+                _holdButtonCoroutine = StartCoroutine(LoadButtonCoroutine());
         }
 
-        private void OnLoadButtonPressed()
-        {
-            if (_holdButtonCoroutine != null)
-                return;
-
-            _holdButtonCoroutine = StartCoroutine(LoadButtonCoroutine());
-        }
         private IEnumerator LoadButtonCoroutine()
         {
-            yield return new WaitForSeconds(1f);
-
+            yield return new WaitForSecondsRealtime(1f);
             _holdButtonCoroutine = null;
-            
-            if (loadButton.action.IsPressed())
-            {
+            if (loadButton && loadButton.action != null && loadButton.action.IsPressed())
                 LoadNextScene();
-            }
-        }
-
-        private IEnumerator LoadSceneWithDelay(string sceneName)
-        {
-            _isLoadingScene = true;
-            yield return new WaitForSeconds(secondsToWaitLoad); // Wait for 1 second before starting to load the scene
-            StartCoroutine(LoadSceneAsync(sceneName));
-        }
-
-        private IEnumerator LoadSceneAsync(string sceneName)
-        {
-            if (verbose)
-            {
-                Debug.Log("To Load Scene's name : " + sceneName);
-            }
-
-            FadeScreen fadeScreen = GetFadeScreen();
-            fadeScreen.FadeOut();
-
-            AsyncOperation asyncLoad = SceneManager.LoadSceneAsync(sceneName);
-            asyncLoad.allowSceneActivation = false;
-
-            float timer = 0;
-            while ((fadeScreen && timer <= fadeScreen.FadeDuration) && !asyncLoad.isDone)
-            {
-                timer += Time.deltaTime;
-                yield return null;
-            }
-
-            asyncLoad.allowSceneActivation = true;
-            asyncLoad.completed += OnSceneLoaded;
-            _isLoadingScene = false;
-        }
-
-        private void OnSceneLoaded(AsyncOperation obj)
-        {
-            GetFadeScreen().gameObject.SetActive(true);
-            SettingsManager.Instance.Reload();
         }
     }
 }

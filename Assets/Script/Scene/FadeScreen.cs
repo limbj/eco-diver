@@ -18,6 +18,7 @@ namespace Scene
 
         private Color fadeColor;
         private Renderer rend;
+        private Coroutine _fadeRoutine;
 
         // Start is called before the first frame update
         void Start()
@@ -41,8 +42,11 @@ namespace Scene
 
         public void Fade(float alphaIn, float alphaOut)
         {
+            if (rend == null) rend = GetComponent<Renderer>();
+            if (rend == null) return;
+            if (_fadeRoutine != null) StopCoroutine(_fadeRoutine);
             Debug.Log("Fade from " + alphaIn + " to " + alphaOut);
-            StartCoroutine(FadeRoutine(alphaIn, alphaOut));
+            _fadeRoutine = StartCoroutine(FadeRoutine(alphaIn, alphaOut));
         }
 
         private IEnumerator FadeRoutine(float alphaIn, float alphaOut)
@@ -54,13 +58,14 @@ namespace Scene
                 nextColor.a = Mathf.Lerp(alphaIn, alphaOut, time / fadeDuration);
 
                 rend.material.SetColor("_Color", nextColor);
-                time += Time.deltaTime;
+                time += Time.unscaledDeltaTime;
                 yield return null;
             }
 
             Color finalColor = fadeColor;
             finalColor.a = alphaOut;
             rend.material.SetColor("_Color", finalColor);
+            _fadeRoutine = null;
         }
     }
 }

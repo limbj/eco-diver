@@ -32,32 +32,21 @@ namespace Script.Quest
         private readonly Queue<Quest> _quests = new Queue<Quest>();
         private QuestLevel _questLevel;
         private Quest _currentQuest;
-
-        // private void Awake()
-        // {
-        //     if (Instance == null)
-        //     {
-        //         Instance = this;
-        //         DontDestroyOnLoad(gameObject);
-        //     }
-        //     else
-        //     {
-        //         Destroy(gameObject);
-        //     }
-        // }
+        private bool _isSuspended;
+        private bool _hasFinishedQuests;
 
         private void Start()
         {
-            foreach (var quest in quests)
+            if (quests != null)
             {
-                if (quest != null)
+                foreach (var quest in quests)
                 {
-                    RegisterQuest(quest);
+                    if (quest != null) RegisterQuest(quest);
                 }
             }
 
-            StartQuest();
             _questLevel = new QuestLevel(_quests.Count);
+            StartQuest();
             UpdateDisplay();
         }
 
@@ -67,26 +56,23 @@ namespace Script.Quest
             _quests.Enqueue(quest);
         }
 
-        private Quest CompleteAndPeekNext()
+        public void SuspendForFailure()
         {
-            _quests.Peek().Deactivate();
-            if (_quests.Count == 0)
-            {
-                return null;
-            }
-            return _quests.Dequeue();
+            _isSuspended = true;
+            StopAllCoroutines();
+            if (_currentQuest) _currentQuest.enabled = false;
+            foreach (var quest in _quests)
+                if (quest) quest.enabled = false;
+            if (arrowIndicator) arrowIndicator.gameObject.SetActive(false);
         }
 
         public void UpdateQuest(Quest quest)
         {
-            _questLevel.LevelUp();
+            if (_isSuspended || _hasFinishedQuests || _quests.Count == 0 || quest != _currentQuest)
+                return;
 
-            var nextQuest = CompleteAndPeekNext();
-            if (nextQuest == null)
-            {
-                // todo: finale if required
-                UpdateDisplay();
-            }
+            _quests.Dequeue().Deactivate();
+            _questLevel.LevelUp();
 
             OnCompleteQuest();
             StartQuest();
@@ -95,6 +81,7 @@ namespace Script.Quest
 
         private void StartQuest()
         {
+            if (_isSuspended || _hasFinishedQuests) return;
             if (_quests.Count == 0)
             {
                 OnFinishAllQuests();
@@ -114,24 +101,20 @@ namespace Script.Quest
 
         private void OnFinishAllQuests()
         {
-            if (_currentQuest == null)
+            if (_isSuspended || _hasFinishedQuests || _currentQuest == null)
             {
                 return;
             }
+            _hasFinishedQuests = true;
             Debug.Log("All Quests Complete");
-            if (arrowIndicator == null)
-            {
-                Debug.LogWarning("Arrow Indicator is not set.");
-                return;
-            }
-            arrowIndicator.gameObject.SetActive(false);
+            if (arrowIndicator) arrowIndicator.gameObject.SetActive(false);
             StartCoroutine(WaitAndLoadScene(3));
         }
 
         private IEnumerator WaitAndLoadScene(float waitTime)
         {
             yield return new WaitForSeconds(waitTime);
-            SceneLoader.Instance.LoadNextScene();
+            if (!_isSuspended) SceneLoader.Instance.LoadNextScene();
         }
 
         private void UpdateArrow(Quest nextQuest)
@@ -167,9 +150,15 @@ namespace Script.Quest
         private void UpdateDisplay()
         {
             var display = DisplayManager.Instance;
+            if (!display) return;
             display.QuestLevel = _questLevel;
             display.QuestName = _currentQuest?.GetQuestName();
             display.QuestDescription = _currentQuest?.GetQuestDescription();
+        }
+
+        private void OnDestroy()
+        {
+            if (_instance == this) _instance = null;
         }
     }
 }

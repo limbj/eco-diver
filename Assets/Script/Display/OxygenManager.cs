@@ -1,36 +1,35 @@
 using UnityEngine;
+using Script.Scene;
+using Script.UI;
 
 namespace Script.Display
 {
     public class OxygenManager : MonoBehaviour
     {
-        private const float MaxOxygenPercent = 100f; // Maximum oxygen capacity
-
         [SerializeField] [Tooltip("consume oxygen if player is not in water.")]
         private bool consumeOxygenMode = false;
         [SerializeField] [Tooltip("seconds Oxygen consume 0.1 percent.")]
         private int oxygenConsumptionSecond = 10; // Oxygen consumed per second at normal conditions
 
-        private float _currentOxygen; // Current oxygen level
-        private float _oxygenTimer = 0;
+        private readonly OxygenSupply _supply = new OxygenSupply();
+        private DiveFailureController _failure;
 
         void Start()
         {
-            _currentOxygen = MaxOxygenPercent;
+            _failure = GetComponent<DiveFailureController>();
+            if (_failure == null) _failure = gameObject.AddComponent<DiveFailureController>();
+            DisplayManager.Instance.OxygenRate = _supply.Percent;
         }
 
         void Update()
         {
-            if (doConsumeOxygen())
-            {
-                _oxygenTimer += Time.deltaTime;
-                if (_oxygenTimer >= oxygenConsumptionSecond)
-                {
-                    // Consume 1% of oxygen and reset the timer
-                    ConsumeOxygen(0.1f);
-                    _oxygenTimer = 0; // Reset timer after consuming oxygen
-                }
-            }
+            if (_failure != null && _failure.IsFailed) return;
+            // An accepted scene transition wins over oxygen depletion in the old scene.
+            if (SceneLoader.Instance.IsLoadingScene) return;
+
+            _supply.Advance(Time.deltaTime, doConsumeOxygen(), oxygenConsumptionSecond);
+            DisplayManager.Instance.OxygenRate = _supply.Percent;
+            if (_supply.IsDepleted && _failure != null) _failure.Show();
         }
 
         private void Pause()
@@ -45,21 +44,10 @@ namespace Script.Display
 
         public void FulfillOxygen()
         {
-            _currentOxygen = MaxOxygenPercent;
-            _oxygenTimer = 0;
-        }
-
-        private void ConsumeOxygen(float amount)
-        {
-            _currentOxygen -= amount;
-            if (_currentOxygen <= 0)
-            {
-                _currentOxygen = 0;
-                Debug.Log("Oxygen depleted!");
-                // Implement death or severe consequence logic here
-            }
-
-            DisplayManager.Instance.OxygenRate = _currentOxygen;
+            // A failed dive is resumed only by restarting the mission.
+            if (_failure != null && _failure.IsFailed) return;
+            _supply.Refill();
+            DisplayManager.Instance.OxygenRate = _supply.Percent;
         }
 
         private bool doConsumeOxygen()
